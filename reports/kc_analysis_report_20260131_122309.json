@@ -1,0 +1,147 @@
+{
+  "Executive Summary": {
+    "Team Overview": {
+      "Total Roster Size": 27,
+      "Starting Pitchers (GS > 20)": 4,
+      "Relief Pitchers": 10,
+      "Closers (SV > 5)": 1
+    },
+    "Pitching Performance Metrics": {
+      "Team ERA": "4.54",
+      "Team WHIP": "1.43",
+      "Total WAR (Pitching)": "19.4",
+      "Avg ERA+": "121"
+    },
+    "Roster Age Profile": {
+      "Average Age": "29.7 years",
+      "Age Range": "23-45 years",
+      "Players Age 26 or Under": 6,
+      "Players Age 27-30": 11,
+      "Players Age 31+": 9
+    },
+    "Competitive Window Assessment": {
+      "Window Type": "REBUILDING - Focus on youth development",
+      "Total Pitching WAR": "19.4",
+      "Team ERA": "4.54"
+    }
+  },
+  "Section 1: Team Analysis": {
+    "Roster Composition": {
+      "Starters": 4,
+      "Relievers": 10,
+      "Closers": 1
+    },
+    "Core Strengths": {
+      "Top WAR Contributors": [
+        "Noah Cameron*",
+        "Kris Bubic*",
+        "Michael Wacha",
+        "Carlos Est\u00e9vez",
+        "Seth Lugo"
+      ],
+      "Efficient Count (ERA+ > 110)": 10,
+      "Avg ERA of Top 5": "3.20"
+    },
+    "Weaknesses": {
+      "Underperformers": 1,
+      "Negative WAR": 7,
+      "Depth Pieces": 10
+    },
+    "Competitive Window": {
+      "Window": "REBUILDING - Focus on youth development",
+      "Team ERA": "4.54",
+      "Total WAR": "19.4"
+    }
+  },
+  "Section 2: Evaluation Framework": {
+    "Archetypes": {
+      "Ace": {
+        "Criteria": "WAR \u2265 4.0, ERA \u2264 3.00, IP \u2265 150",
+        "Role": "Elite starter, Cy Young contender",
+        "Value": "Franchise anchor"
+      },
+      "Reliable_Starter": {
+        "Criteria": "WAR \u2265 2.0, ERA \u2264 3.80, IP \u2265 100",
+        "Role": "Quality rotation member",
+        "Value": "Consistent contributor"
+      },
+      "High_Volume_Reliever": {
+        "Criteria": "WAR \u2265 1.5, ERA \u2264 3.50, IP \u2265 50",
+        "Role": "Workhorse reliever, high usage",
+        "Value": "Dependable depth"
+      },
+      "Closer": {
+        "Criteria": "SV \u2265 5, ERA \u2264 3.30",
+        "Role": "Saves leader",
+        "Value": "Game-closer, leader"
+      },
+      "Young_Prospect": {
+        "Criteria": "Age \u2264 26, showing development",
+        "Role": "Future contributor",
+        "Value": "Long-term upside"
+      }
+    },
+    "Archetype Distribution": {
+      "Depth Piece": 18,
+      "Young_Prospect": 5,
+      "Reliable_Starter": 2,
+      "Closer": 1,
+      "High_Volume_Reliever": 1
+    },
+    "Rationale": "\nMETRIC JUSTIFICATION FOR KC ROYALS STRATEGIC DIRECTION:\n\n1. WAR (Wins Above Replacement):\n   \u2022 Holistic measure of pitcher value\n   \u2022 Accounts for all aspects of pitching performance\n   \u2022 Industry standard for comparing players across positions\n   \n2. ERA (Earned Run Average):\n   \u2022 Primary indicator of pitching effectiveness\n   \u2022 Adjusted for league environment (ERA+)\n   \u2022 Key predictor of future success\n   \n3. IP (Innings Pitched):\n   \u2022 Volume metric indicating durability\n   \u2022 Separates starters from relievers\n   \u2022 Shows availability and trust from management\n   \n4. Age/Development Curve:\n   \u2022 Pitchers peak typically 28-32 years old\n   \u2022 Young pitchers (\u226426) have high variance\n   \u2022 Aging curve critical for contract decisions\n   \n5. Saves/Role Metrics:\n   \u2022 Identifies specialized closers\n   \u2022 Reliever usage patterns\n   \u2022 Long-term roster construction needs\n        "
+  },
+  "Section 3: Roster Optimization": {
+    "Arbitration": {
+      "Eligible": 8,
+      "Early Extension Candidates": 1,
+      "Peak Trade Candidates": 0
+    },
+    "Underperformers": {
+      "Total": 7,
+      "DFA Candidates": 2,
+      "Demote Candidates": 0
+    },
+    "Prospects": {
+      "Promotable": 4,
+      "Promote MLB": 1,
+      "Continue Development": 3
+    }
+  },
+  "Section 4: Trade Proposals": {
+    "Trade 1": {
+      "KC Sends": [
+        {
+          "Player": "Bailey Falter*",
+          "WAR": -0.7,
+          "Role": "Low-value reliever"
+        },
+        {
+          "Player": "Luinder Avila",
+          "WAR": 0.4,
+          "Role": "Prospect (limited upside)"
+        }
+      ],
+      "KC Receives": [
+        {
+          "Player": "TBD (Established SP)",
+          "WAR": 2.5,
+          "Role": "Starting Pitcher (100+ IP)"
+        }
+      ],
+      "Short Term WAR": 1.0,
+      "Long Term WAR": 1.5
+    },
+    "Trade 2": {
+      "KC Sends": [],
+      "KC Receives": [
+        {
+          "Player": "TBD (Young SP Prospect)",
+          "WAR": 1.0,
+          "Role": "Starter prospect (age 24-26)"
+        }
+      ],
+      "Short Term WAR": -0.5,
+      "Long Term WAR": 1.5
+    }
+  }
+}
