@@ -1,26 +1,24 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import r2_score, mean_absolute_error
 import joblib
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
-# Use relative paths for portability
 pitcher_data_path = "./Savant Pitcher 2021-2025.csv"
 batter_data_path = "./Savant Batter 2021-2025.csv"
 
 try:
-    # Load both datasets
     pitcher_data = pd.read_csv(pitcher_data_path)
     batter_data = pd.read_csv(batter_data_path)
 except Exception as e:
     print(f"Error loading data: {e}")
     exit()
 
-# Print initial data info
 print("Pitcher Data Shape:", pitcher_data.shape)
 print("Batter Data Shape:", batter_data.shape)
 
@@ -57,12 +55,11 @@ if merged_data.empty:
     print("No common player-year combinations found. Check your data.")
     exit()
 
-# Define target variable
 target_column = 'batting_avg_batter'
 
 if target_column not in merged_data.columns:
-    print(f"Error: Target column '{target_column}' not found in merged dataset.")
-    print(f"Available columns: {merged_data.columns.tolist()}")
+    print(f"Error: Target column '{target_column}' not found.")
+    print(f"Available columns: {[c for c in merged_data.columns if 'batting' in c.lower()]}")
     exit()
 
 # Drop rows where target is missing
@@ -72,24 +69,17 @@ print(f"Rows after removing missing target: {len(merged_data)}")
 # Check for missing values
 missing_values = merged_data.isnull().sum()
 missing_counts = missing_values[missing_values > 0]
-if len(missing_counts) > 0:
-    print(f"\nColumns with missing values: {len(missing_counts)}")
-    # Drop columns with >50% missing values
-    threshold = 0.5 * len(merged_data)
-    columns_to_drop = missing_values[missing_values > threshold].index.tolist()
-    if columns_to_drop:
-        print(f"Dropping columns with >50% missing: {columns_to_drop}")
-        merged_data = merged_data.drop(columns=columns_to_drop)
+threshold = 0.5 * len(merged_data)
+columns_to_drop = missing_values[missing_values > threshold].index.tolist()
+if columns_to_drop:
+    merged_data = merged_data.drop(columns=columns_to_drop)
 
-# Fill remaining missing values with column mean for numeric columns
 numeric_columns = merged_data.select_dtypes(include=['float64', 'int64']).columns
 merged_data[numeric_columns] = merged_data[numeric_columns].fillna(
     merged_data[numeric_columns].mean()
 )
 
-print(f"\nFinal dataset shape: {merged_data.shape}")
-
-# Select features (exclude identifiers, names, and target)
+# Feature selection - exclude pitcher columns and metadata
 exclude_cols = {
     'player_id', 'year', target_column, 
     'last_name, first_name_batter', 'last_name, first_name_pitcher',
@@ -98,7 +88,8 @@ exclude_cols = {
 
 feature_columns = [col for col in merged_data.columns 
                    if col not in exclude_cols 
-                   and merged_data[col].dtype in ['float64', 'int64']]
+                   and merged_data[col].dtype in ['float64', 'int64']
+                   and not col.startswith('p_')]  # Exclude pitcher stats
 
 print(f"\nUsing {len(feature_columns)} features for training")
 
@@ -133,9 +124,14 @@ X_train, X_test, y_train, y_test = train_test_split(
 print(f"\nTraining set: {X_train.shape[0]} samples")
 print(f"Testing set: {X_test.shape[0]} samples")
 
-# Train model
-print("\nTraining Random Forest model...")
-model = RandomForestRegressor(
+# Train multiple models
+print("\n" + "="*70)
+print("TRAINING MODELS")
+print("="*70)
+
+# Model 1: Random Forest (for feature importance)
+print("\n1. Training Random Forest Regressor...")
+rf_model = RandomForestRegressor(
     n_estimators=100,
     max_depth=15,
     min_samples_split=10,
@@ -143,43 +139,55 @@ model = RandomForestRegressor(
     random_state=42,
     n_jobs=-1
 )
+rf_model.fit(X_train, y_train)
 
-model.fit(X_train, y_train)
+# Model 2: Gradient Boosting (better generalization)
+print("2. Training Gradient Boosting Regressor...")
+gb_model = GradientBoostingRegressor(
+    n_estimators=100,
+    learning_rate=0.1,
+    max_depth=7,
+    min_samples_split=10,
+    random_state=42
+)
+gb_model.fit(X_train, y_train)
 
-# Evaluate
-y_pred_train = model.predict(X_train)
-y_pred_test = model.predict(X_test)
+# Evaluate models
+y_pred_rf = rf_model.predict(X_test)
+y_pred_gb = gb_model.predict(X_test)
 
-train_mse = mean_squared_error(y_train, y_pred_train)
-test_mse = mean_squared_error(y_test, y_pred_test)
-train_r2 = r2_score(y_train, y_pred_train)
-test_r2 = r2_score(y_test, y_pred_test)
-test_mae = mean_absolute_error(y_test, y_pred_test)
-
-print("\n" + "="*50)
+print("\n" + "="*70)
 print("MODEL PERFORMANCE")
-print("="*50)
-print(f"Training MSE:  {train_mse:.6f}")
-print(f"Testing MSE:   {test_mse:.6f}")
-print(f"Training R²:   {train_r2:.6f}")
-print(f"Testing R²:    {test_r2:.6f}")
-print(f"Testing MAE:   {test_mae:.6f}")
-print("="*50)
+print("="*70)
+
+rf_r2 = r2_score(y_test, y_pred_rf)
+gb_r2 = r2_score(y_test, y_pred_gb)
+rf_mae = mean_absolute_error(y_test, y_pred_rf)
+gb_mae = mean_absolute_error(y_test, y_pred_gb)
+
+print(f"\nRandom Forest:")
+print(f"  R² Score: {rf_r2:.4f}")
+print(f"  MAE: {rf_mae:.4f}")
+
+print(f"\nGradient Boosting:")
+print(f"  R² Score: {gb_r2:.4f}")
+print(f"  MAE: {gb_mae:.4f}")
 
 # Feature importance
 feature_importance = pd.DataFrame({
     'feature': feature_columns,
-    'importance': model.feature_importances_
+    'importance': rf_model.feature_importances_
 }).sort_values('importance', ascending=False)
 
 print("\nTop 15 Most Important Features:")
 print(feature_importance.head(15).to_string(index=False))
 
-# Save artifacts
-joblib.dump(model, "baseball_model.pkl")
-joblib.dump(scaler, "baseball_scaler.pkl")
-joblib.dump(feature_columns, "feature_columns.pkl")
+# Save models
+os.makedirs('models', exist_ok=True)
 
-print("\n✓ Model saved as 'baseball_model.pkl'")
-print("✓ Scaler saved as 'baseball_scaler.pkl'")
-print("✓ Feature columns saved as 'feature_columns.pkl'")
+joblib.dump(rf_model, "models/baseball_rf_model.pkl")
+joblib.dump(gb_model, "models/baseball_gb_model.pkl")
+joblib.dump(scaler, "models/baseball_scaler.pkl")
+joblib.dump(feature_columns, "models/feature_columns.pkl")
+
+print("\n✓ Models saved successfully to models/ directory")
