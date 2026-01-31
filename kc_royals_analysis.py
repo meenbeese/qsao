@@ -4,10 +4,10 @@ import joblib
 import warnings
 warnings.filterwarnings('ignore')
 
-# Load KC Royals roster data
 kc_data = pd.read_csv('./kc_royals.csv')
 
-# Load pre-trained models from analyze_baseball_data.py
+external_pitchers = pd.read_csv('./Savant Pitcher 2021-2025.csv')
+
 try:
     rf_model = joblib.load('./models/baseball_rf_model.pkl')
     gb_model = joblib.load('./models/baseball_gb_model.pkl')
@@ -20,8 +20,91 @@ except Exception as e:
     rf_model = gb_model = scaler = feature_columns = None
 
 print("\n" + "="*70)
-print("KC ROYALS 2025 ROSTER ANALYSIS")
+print("KC ROYALS 2025 ROSTER ANALYSIS WITH EXTERNAL TRADE TARGETS")
 print("="*70)
+
+# ============================================================================
+# DATA PREPARATION: Map external data to KC roster format
+# ============================================================================
+
+def prepare_external_pitcher_data(savant_df):
+    """Convert Savant pitcher data to KC roster format for comparison"""
+    
+    # Create player full name
+    savant_df['Player'] = savant_df['last_name, first_name'].str.split(', ').apply(
+        lambda x: f"{x[1]} {x[0]}" if isinstance(x, list) and len(x) == 2 else ""
+    )
+    
+    # Map Savant columns to KC roster equivalents
+    pitcher_roster = pd.DataFrame({
+        'Player': savant_df['Player'],
+        'player_id': savant_df['player_id'],
+        'Age': savant_df['player_age'],
+        'Year': savant_df['year'],
+        'G': savant_df['p_game'],
+        'GS': 0,  # Not directly available, will estimate
+        'IP': savant_df['p_formatted_ip'].astype(str).str.replace('.', '', regex=False).astype(float) / 10,  # Convert formatted IP
+        'W': savant_df['p_win'],
+        'L': savant_df['p_loss'],
+        'SV': savant_df['p_save'],
+        'BS': savant_df['p_blown_save'],
+        'ERA': savant_df['p_era'],
+        'WHIP': np.nan,  # Calculate if possible
+        'SO': savant_df['strikeout'],
+        'BB': savant_df['walk'],
+        'K_percent': savant_df['k_percent'],
+        'BB_percent': savant_df['bb_percent'],
+        'AVG': savant_df['p_opp_batting_avg'],
+        'OBP': savant_df['p_opp_on_base_avg'],
+        'xBA': savant_df['xba'],
+        'xSLG': savant_df['xslg'],
+        'wOBA': savant_df['woba'],
+        'xwOBA': savant_df['xwoba'],
+        'exit_velo': savant_df['exit_velocity_avg'],
+        'barrel_rate': savant_df['barrel_batted_rate'],
+        'hard_hit_percent': savant_df['hard_hit_percent'],
+        'whiff_percent': savant_df['whiff_percent']
+    })
+    
+    # Estimate GS based on games and saves (starters don't get saves)
+    pitcher_roster['GS'] = np.where(
+        pitcher_roster['SV'] == 0,
+        (pitcher_roster['G'] * 0.7).astype(int),  # Estimate starters
+        0  # Relievers
+    )
+    
+    # Estimate WAR based on ERA, IP, and K% (simplified formula)
+    # WAR approximation: ((League ERA - Player ERA) / 9) * IP/9 + K bonus
+    league_era = 4.00
+    pitcher_roster['WAR'] = (
+        ((league_era - pitcher_roster['ERA']) / 9) * (pitcher_roster['IP'] / 9) +
+        (pitcher_roster['K_percent'] - 20) / 100
+    ).fillna(0)
+    
+    # Calculate ERA+ (100 = league average)
+    pitcher_roster['ERA+'] = ((league_era / pitcher_roster['ERA']) * 100).fillna(100)
+    
+    # Filter to most recent year (2024) for current value
+    pitcher_roster = pitcher_roster[pitcher_roster['Year'] == pitcher_roster['Year'].max()]
+    
+    # Remove duplicates (keep best season if multiple entries)
+    pitcher_roster = pitcher_roster.sort_values('WAR', ascending=False).drop_duplicates('player_id', keep='first')
+    
+    return pitcher_roster
+
+print("\nPreparing external pitcher dataset...")
+external_roster = prepare_external_pitcher_data(external_pitchers)
+print(f"✓ Loaded {len(external_roster)} external pitchers from Savant data")
+
+# Get KC player IDs to filter them out from external candidates
+kc_player_names = set(kc_data['Player'].str.lower().str.strip())
+
+# Filter external pitchers (exclude anyone already on KC)
+available_pitchers = external_roster[
+    ~external_roster['Player'].str.lower().str.strip().isin(kc_player_names)
+].copy()
+
+print(f"✓ {len(available_pitchers)} external pitchers available (excluding current KC roster)")
 
 # ============================================================================
 # REQUIREMENT 1: TEAM ANALYSIS
@@ -378,6 +461,9 @@ class RosterOptimizationDecisions:
         
         print(f"\nUnderperformers (WAR < 0 OR ERA > 5.0 with 30+ IP): {len(underperformers)}")
         
+        dfa = pd.DataFrame()
+        demote = pd.DataFrame()
+        
         if len(underperformers) > 0:
             print("\nRecommendations:")
             
@@ -398,7 +484,9 @@ class RosterOptimizationDecisions:
         
         return {
             'underperformers': underperformers,
-            'dfa_count': len(dfa) if len(underperformers) > 0 else 0
+            'dfa_candidates': dfa,
+            'demote_candidates': demote,
+            'dfa_count': len(dfa)
         }
     
     def assess_prospect_promotion(self):
@@ -430,96 +518,300 @@ class RosterOptimizationDecisions:
         }
 
 # ============================================================================
-# REQUIREMENT 4: TRADE PROPOSAL FRAMEWORK
+# REQUIREMENT 4: EXTERNAL TRADE PROPOSAL FRAMEWORK
 # ============================================================================
 
-class TradeProposalAnalysis:
-    """Generate realistic, analytics-backed trade proposals"""
+class ExternalTradeProposalAnalysis:
+    """Generate realistic trade proposals with external players"""
     
-    def __init__(self, roster_df):
-        self.roster = roster_df
+    def __init__(self, kc_roster_df, external_roster_df):
+        self.kc_roster = kc_roster_df
+        self.external_roster = external_roster_df
         
-    def generate_trade_proposals(self):
-        """Generate two realistic trade proposals"""
-        print("\n10. TRADE PROPOSAL FRAMEWORK")
+    def find_trade_targets_by_need(self):
+        """Identify external trade targets based on KC needs"""
+        print("\n10. EXTERNAL TRADE TARGET IDENTIFICATION")
         print("-" * 70)
         
-        print("\nPROPOSAL #1: ACQUIRE ACE STARTER")
-        print("  Rationale: Address rotation weakness (WAR/ERA gap)")
-        print("\n  KC SENDS OUT:")
-        print("    • Underperforming reliever (negative WAR, expendable)")
-        print("    • Young prospect with limited upside")
+        # Define KC needs based on roster analysis
+        print("\nKC ROYALS IDENTIFIED NEEDS:")
+        print("  1. Ace Starting Pitcher (ERA < 3.00, 150+ IP)")
+        print("  2. High-Leverage Reliever (ERA < 3.00, K% > 25%)")
+        print("  3. Young Starting Pitcher (Age < 27, upside)")
         
-        underperf = self.roster[(self.roster['WAR'] < 0) & (self.roster['IP'] < 50)]
-        if len(underperf) > 0:
-            print(f"\n    Example: {underperf.iloc[0]['Player']} (WAR: {underperf.iloc[0]['WAR']:.1f})")
+        # Find external ace candidates
+        ace_candidates = self.external_roster[
+            (self.external_roster['ERA'] < 3.00) &
+            (self.external_roster['IP'] >= 150) &
+            (self.external_roster['WAR'] >= 4.0)
+        ].sort_values('WAR', ascending=False).head(10)
         
-        print("\n  KC RECEIVES:")
-        print("    • Established SP (2.5+ WAR, sub-4.00 ERA)")
-        print("    • Fills immediate rotation need")
+        print(f"\n  ACE CANDIDATES FROM EXTERNAL POOL: {len(ace_candidates)}")
+        if len(ace_candidates) > 0:
+            print(ace_candidates[['Player', 'Age', 'WAR', 'ERA', 'IP', 'K_percent']].to_string(index=False))
         
-        print("\n  IMPACT:")
-        print("    Short-term: +1.5-2.0 WAR improvement, better ERA leadership")
-        print("    Long-term: Competitive rotation; premium salary obligation")
+        # Find high-leverage relievers
+        reliever_candidates = self.external_roster[
+            (self.external_roster['ERA'] < 3.00) &
+            (self.external_roster['IP'] >= 50) &
+            (self.external_roster['IP'] < 100) &
+            (self.external_roster['K_percent'] > 25)
+        ].sort_values('WAR', ascending=False).head(10)
+        
+        print(f"\n  HIGH-LEVERAGE RELIEVER CANDIDATES: {len(reliever_candidates)}")
+        if len(reliever_candidates) > 0:
+            print(reliever_candidates[['Player', 'Age', 'WAR', 'ERA', 'K_percent', 'whiff_percent']].to_string(index=False))
+        
+        # Find young starters with upside
+        young_starter_candidates = self.external_roster[
+            (self.external_roster['Age'] < 27) &
+            (self.external_roster['IP'] >= 100) &
+            (self.external_roster['ERA'] < 4.00) &
+            (self.external_roster['WAR'] > 1.5)
+        ].sort_values('WAR', ascending=False).head(10)
+        
+        print(f"\n  YOUNG STARTER CANDIDATES (Upside): {len(young_starter_candidates)}")
+        if len(young_starter_candidates) > 0:
+            print(young_starter_candidates[['Player', 'Age', 'WAR', 'ERA', 'IP']].to_string(index=False))
+        
+        return {
+            'ace_candidates': ace_candidates,
+            'reliever_candidates': reliever_candidates,
+            'young_starter_candidates': young_starter_candidates
+        }
+    
+    def identify_kc_trade_chips(self):
+        """Identify KC players who could be traded"""
+        print("\n11. KC ROYALS AVAILABLE TRADE CHIPS")
+        print("-" * 70)
+        
+        # Players to move: underperformers or depth pieces
+        underperformers = self.kc_roster[
+            (self.kc_roster['WAR'] < 0) | 
+            ((self.kc_roster['ERA'] > 5.0) & (self.kc_roster['IP'] > 30))
+        ]
+        
+        depth_pieces = self.kc_roster[
+            (self.kc_roster['Archetype'] == 'Depth Piece') &
+            (self.kc_roster['WAR'] >= 0)
+        ]
+        
+        print(f"\n  UNDERPERFORMERS (negative value, priority to move): {len(underperformers)}")
+        if len(underperformers) > 0:
+            print(underperformers[['Player', 'Age', 'WAR', 'ERA', 'IP']].to_string(index=False))
+        
+        print(f"\n  DEPTH PIECES (expendable, neutral value): {len(depth_pieces)}")
+        if len(depth_pieces) > 0:
+            print(depth_pieces[['Player', 'Age', 'WAR', 'ERA']].head(10).to_string(index=False))
+        
+        return {
+            'underperformers': underperformers,
+            'depth_pieces': depth_pieces
+        }
+    
+    def generate_external_trade_proposals(self, trade_targets, trade_chips):
+        """Generate realistic external trade proposals"""
+        print("\n12. EXTERNAL TRADE PROPOSALS")
+        print("="*70)
+        
+        ace_candidates = trade_targets['ace_candidates']
+        young_starters = trade_targets['young_starter_candidates']
+        relievers = trade_targets['reliever_candidates']
+        
+        underperformers = trade_chips['underperformers']
+        depth_pieces = trade_chips['depth_pieces']
+        
+        # ----------------------------
+        # PROPOSAL #1: Acquire Ace Starter
+        # ----------------------------
+        print("\n╔═══════════════════════════════════════════════════════════════════════╗")
+        print("║ TRADE PROPOSAL #1: ACQUIRE ACE STARTER                               ║")
+        print("╚═══════════════════════════════════════════════════════════════════════╝")
+        
+        if len(ace_candidates) > 0 and len(underperformers) > 0:
+            # KC sends out worst performer
+            kc_sends = underperformers.nsmallest(1, 'WAR')
+            
+            # KC receives best available ace
+            kc_receives = ace_candidates.nlargest(1, 'WAR')
+            
+            print("\n  KC ROYALS SEND OUT:")
+            for idx, row in kc_sends.iterrows():
+                print(f"    ❌ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
+            
+            print("\n  KC ROYALS RECEIVE:")
+            for idx, row in kc_receives.iterrows():
+                print(f"    ✅ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
+                print(f"       K%: {row['K_percent']:.1f}%  xERA: {row.get('xwOBA', 'N/A')}  Barrel%: {row.get('barrel_rate', 'N/A')}")
+            
+            # Calculate WAR impact
+            war_out = kc_sends['WAR'].sum()
+            war_in = kc_receives['WAR'].sum()
+            war_delta = war_in - war_out
+            
+            print("\n  IMPACT ANALYSIS:")
+            print(f"    WAR Change: {war_delta:+.1f} ({war_out:.1f} out → {war_in:.1f} in)")
+            print(f"    ERA Impact: {kc_sends.iloc[0]['ERA']:.2f} → {kc_receives.iloc[0]['ERA']:.2f}")
+            print(f"    Role Upgrade: {kc_sends.iloc[0].get('Archetype', 'Unknown')} → Elite Starter")
+            
+            print("\n  STRATEGIC RATIONALE:")
+            print("    ✓ Addresses rotation weakness with proven ace")
+            print("    ✓ Removes underperforming asset from 40-man")
+            print("    ✓ Improves playoff rotation depth")
+            print("    ⚠ Increases payroll with premium starter")
+            
+        else:
+            print("\n  ⚠ Insufficient trade assets or external targets for this proposal")
         
         print("\n" + "="*70)
-        print("\nPROPOSAL #2: YOUTH INFUSION + SALARY RELIEF")
-        print("  Rationale: Move veteran reliever at peak value, acquire young SP")
-        print("\n  KC SENDS OUT:")
-        print("    • High-value reliever (2+ WAR, sub-3.30 ERA)")
         
-        good_relievers = self.roster[
-            (self.roster['G'] > 20) & 
-            (self.roster['GS'] < 5) &
-            (self.roster['WAR'] > 1.5)
-        ]
-        if len(good_relievers) > 0:
-            print(f"    Example: {good_relievers.iloc[0]['Player']} (WAR: {good_relievers.iloc[0]['WAR']:.1f})")
+        # ----------------------------
+        # PROPOSAL #2: Youth Infusion
+        # ----------------------------
+        print("\n╔═══════════════════════════════════════════════════════════════════════╗")
+        print("║ TRADE PROPOSAL #2: YOUTH INFUSION + SALARY RELIEF                    ║")
+        print("╚═══════════════════════════════════════════════════════════════════════╝")
         
-        print("\n  KC RECEIVES:")
-        print("    • Young starter (age 25-27, high upside)")
-        print("    • Cost-controlled for 2-3 years")
+        if len(young_starters) > 0 and len(depth_pieces) > 0:
+            # KC sends depth piece
+            kc_sends2 = depth_pieces.head(1)
+            
+            # KC receives young starter
+            kc_receives2 = young_starters.nlargest(1, 'WAR')
+            
+            print("\n  KC ROYALS SEND OUT:")
+            for idx, row in kc_sends2.iterrows():
+                print(f"    ❌ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
+            
+            print("\n  KC ROYALS RECEIVE:")
+            for idx, row in kc_receives2.iterrows():
+                print(f"    ✅ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
+                print(f"       K%: {row['K_percent']:.1f}%  BB%: {row['BB_percent']:.1f}%  xwOBA: {row.get('xwOBA', 'N/A')}")
+            
+            # Calculate impact
+            war_out2 = kc_sends2['WAR'].sum()
+            war_in2 = kc_receives2['WAR'].sum()
+            war_delta2 = war_in2 - war_out2
+            
+            print("\n  IMPACT ANALYSIS:")
+            print(f"    WAR Change: {war_delta2:+.1f} ({war_out2:.1f} out → {war_in2:.1f} in)")
+            print(f"    Age Profile: {kc_sends2.iloc[0]['Age']} → {kc_receives2.iloc[0]['Age']} years old")
+            print(f"    Control Years: Limited → 4-6 years of team control")
+            
+            print("\n  STRATEGIC RATIONALE:")
+            print("    ✓ Adds controllable young starter to rotation")
+            print("    ✓ Salary relief (pre-arb vs veteran)")
+            print("    ✓ Aligns with competitive window (2025-2028)")
+            print("    ✓ Minimal short-term WAR sacrifice")
+            
+        else:
+            print("\n  ⚠ Insufficient trade assets or external targets for this proposal")
         
-        print("\n  IMPACT:")
-        print("    Short-term: -0.5 WAR (lose established arm)")
-        print("    Long-term: +1.5-2.0 WAR (prospect development), $5M+ savings")
+        print("\n" + "="*70)
+        
+        # ----------------------------
+        # PROPOSAL #3: Bullpen Upgrade
+        # ----------------------------
+        print("\n╔═══════════════════════════════════════════════════════════════════════╗")
+        print("║ TRADE PROPOSAL #3: BULLPEN HIGH-LEVERAGE ARM                         ║")
+        print("╚═══════════════════════════════════════════════════════════════════════╝")
+        
+        if len(relievers) > 0 and (len(underperformers) > 1 or len(depth_pieces) > 1):
+            # KC sends underperformer or depth
+            if len(underperformers) > 1:
+                kc_sends3 = underperformers.nsmallest(2, 'WAR').head(1)
+            else:
+                kc_sends3 = depth_pieces.head(1)
+            
+            # KC receives elite reliever
+            kc_receives3 = relievers.nlargest(1, 'WAR')
+            
+            print("\n  KC ROYALS SEND OUT:")
+            for idx, row in kc_sends3.iterrows():
+                print(f"    ❌ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
+            
+            print("\n  KC ROYALS RECEIVE:")
+            for idx, row in kc_receives3.iterrows():
+                print(f"    ✅ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
+                print(f"       K%: {row['K_percent']:.1f}%  Whiff%: {row.get('whiff_percent', 'N/A')}%  Hard Hit%: {row.get('hard_hit_percent', 'N/A')}")
+            
+            # Calculate impact
+            war_out3 = kc_sends3['WAR'].sum()
+            war_in3 = kc_receives3['WAR'].sum()
+            war_delta3 = war_in3 - war_out3
+            
+            print("\n  IMPACT ANALYSIS:")
+            print(f"    WAR Change: {war_delta3:+.1f} ({war_out3:.1f} out → {war_in3:.1f} in)")
+            print(f"    Bullpen Role: Setup → High-Leverage/Closer")
+            print(f"    K Rate: {kc_sends3.iloc[0].get('K_percent', 0):.1f}% → {kc_receives3.iloc[0]['K_percent']:.1f}%")
+            
+            print("\n  STRATEGIC RATIONALE:")
+            print("    ✓ Strengthens late-inning bullpen depth")
+            print("    ✓ Elite strikeout ability for high-leverage spots")
+            print("    ✓ Playoff-caliber shutdown arm")
+            print("    ⚠ Reliever volatility (year-to-year variance)")
+            
+        else:
+            print("\n  ⚠ Insufficient trade assets or external targets for this proposal")
 
 # ============================================================================
 # EXECUTE FULL ANALYSIS
 # ============================================================================
 
-# Run all analyses
+# Run team analysis
 team = KCRoyalsTeamAnalysis(kc_data)
 composition = team.analyze_roster_composition()
 strengths = team.identify_core_strengths()
 weaknesses = team.identify_weaknesses()
 window = team.assess_competitive_window()
 
+# Run player evaluation
 eval_model = PlayerEvaluationModel(kc_data, rf_model, gb_model, scaler, feature_columns)
 archetypes = eval_model.create_pitcher_archetypes()
 kc_data_assigned = eval_model.assign_player_archetypes(archetypes)
 
-# Score players with ML models - ensure roster is preserved
+# Score players with ML models
 if rf_model is not None:
     kc_data_assigned = eval_model.score_players_with_ml()
     if kc_data_assigned is None:
         kc_data_assigned = eval_model.roster
 
+# Run roster optimization
 roster_opt = RosterOptimizationDecisions(kc_data_assigned)
 arb_analysis = roster_opt.identify_arbitration_candidates()
 underperf_analysis = roster_opt.evaluate_underperformers()
 prospect_analysis = roster_opt.assess_prospect_promotion()
 
-trades = TradeProposalAnalysis(kc_data_assigned)
-trades.generate_trade_proposals()
+# Run EXTERNAL trade analysis
+external_trades = ExternalTradeProposalAnalysis(kc_data_assigned, available_pitchers)
+trade_targets = external_trades.find_trade_targets_by_need()
+trade_chips = external_trades.identify_kc_trade_chips()
+external_trades.generate_external_trade_proposals(trade_targets, trade_chips)
+
+# ============================================================================
+# FINAL SUMMARY
+# ============================================================================
 
 print("\n" + "="*70)
-print("KC ROYALS ANALYSIS COMPLETE")
+print("KC ROYALS ANALYSIS COMPLETE - EXTERNAL TRADE EDITION")
 print("="*70)
-print("\nSUMMARY:")
+print("\nEXECUTIVE SUMMARY:")
 print(f"  Competitive Window: {window['window']}")
 print(f"  Team ERA: {window['avg_era']:.2f}")
 print(f"  Total Pitching WAR: {window['total_war']:.1f}")
 print(f"  Arb Candidates: {arb_analysis['arb_eligible']}")
 print(f"  Underperformers: {len(underperf_analysis['underperformers'])}")
 print(f"  Promotable Prospects: {prospect_analysis['promotable']}")
+print(f"\n  External Ace Targets: {len(trade_targets['ace_candidates'])}")
+print(f"  External Young Starters: {len(trade_targets['young_starter_candidates'])}")
+print(f"  External Relievers: {len(trade_targets['reliever_candidates'])}")
+print(f"\n  KC Trade Chips (Underperformers): {len(trade_chips['underperformers'])}")
+print(f"  KC Trade Chips (Depth): {len(trade_chips['depth_pieces'])}")
+
+print("\n" + "="*70)
+print("RECOMMENDED ACTIONS:")
+print("  1. Execute Trade Proposal #1 to acquire ace starter")
+print("  2. DFA underperformers to clear 40-man roster space")
+print("  3. Promote top prospects to MLB roster")
+print("  4. Extend arbitration-eligible high performers")
+print("="*70)
