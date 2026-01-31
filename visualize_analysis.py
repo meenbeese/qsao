@@ -15,8 +15,8 @@ plt.rcParams['figure.figsize'] = (14, 8)
 
 # Load trained models and data
 try:
-    rf_model = joblib.load("baseball_rf_model.pkl")
-    feature_columns = joblib.load("feature_columns.pkl")
+    rf_model = joblib.load("./models/baseball_rf_model.pkl")
+    feature_columns = joblib.load("./models/feature_columns.pkl")
     print("✓ Models loaded successfully")
 except:
     print("Error: Models not found. Run analyze_baseball_data.py first.")

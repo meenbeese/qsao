@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
 import joblib
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
 pitcher_data_path = "./Savant Pitcher 2021-2025.csv"
@@ -182,12 +183,14 @@ print("\nTop 15 Most Important Features:")
 print(feature_importance.head(15).to_string(index=False))
 
 # Save models
-joblib.dump(rf_model, "baseball_rf_model.pkl")
-joblib.dump(gb_model, "baseball_gb_model.pkl")
-joblib.dump(scaler, "baseball_scaler.pkl")
-joblib.dump(feature_columns, "feature_columns.pkl")
+os.makedirs('models', exist_ok=True)
 
-print("\n✓ Models saved successfully")
+joblib.dump(rf_model, "models/baseball_rf_model.pkl")
+joblib.dump(gb_model, "models/baseball_gb_model.pkl")
+joblib.dump(scaler, "models/baseball_scaler.pkl")
+joblib.dump(feature_columns, "models/feature_columns.pkl")
+
+print("\n✓ Models saved successfully to models/ directory")
 
 # ============================================================================
 # REQUIREMENT 1: KC ROYALS TEAM ANALYSIS
@@ -530,12 +533,12 @@ trade_gen = TradeProposalGenerator(eval_framework)
 proposals = trade_gen.generate_trade_targets('upgrade_pitching', batter_data)
 
 for proposal in proposals:
-    print(f"\nProposal #{proposal['trade_id']}")
-    print(f"  Rationale: {proposal['rationale']}")
-    print(f"  KC Sends: {proposal['kc_sends'][0]['name']}")
-    print(f"  KC Receives: {proposal['kc_receives'][0]['name']}")
+    print(f"\nProposal          #{proposal['trade_id']}")
+    print(f"  Rationale:         {proposal['rationale']}")
+    print(f"  KC Sends:          {proposal['kc_sends'][0]['name']}")
+    print(f"  KC Receives:       {proposal['kc_receives'][0]['name']}")
     print(f"  Short-term Impact: {proposal['short_term']}")
-    print(f"  Long-term Impact: {proposal['long_term']}")
+    print(f"  Long-term Impact:  {proposal['long_term']}")
 
 print("\n" + "="*70)
 print("ANALYSIS COMPLETE")
