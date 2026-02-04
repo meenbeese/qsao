@@ -20,7 +20,7 @@ except Exception as e:
     rf_model = gb_model = scaler = feature_columns = None
 
 print("\n" + "="*70)
-print("KC ROYALS 2025 ROSTER ANALYSIS WITH EXTERNAL TRADE TARGETS")
+print("KC ROYALS 2025 ROSTER ANALYSIS WITH REALISTIC TRADE PROPOSALS")
 print("="*70)
 
 # ============================================================================
@@ -518,37 +518,198 @@ class RosterOptimizationDecisions:
         }
 
 # ============================================================================
-# REQUIREMENT 4: EXTERNAL TRADE PROPOSAL FRAMEWORK
+# REQUIREMENT 4: REALISTIC TRADE VALUATION SYSTEM
 # ============================================================================
 
-class ExternalTradeProposalAnalysis:
-    """Generate realistic trade proposals with external players"""
+class RealisticTradeValuation:
+    """Calculate fair market value for trades with realism scoring"""
     
     def __init__(self, kc_roster_df, external_roster_df):
         self.kc_roster = kc_roster_df
         self.external_roster = external_roster_df
+        
+    def calculate_trade_value(self, player_row):
+        """Calculate a player's trade value based on multiple factors"""
+        
+        # Base value from WAR
+        war_value = player_row['WAR'] * 10
+        
+        # Age adjustment (prime years 25-29 are most valuable)
+        age = player_row['Age']
+        if 25 <= age <= 29:
+            age_multiplier = 1.2
+        elif age < 25:
+            age_multiplier = 1.1  # Upside potential
+        elif 30 <= age <= 32:
+            age_multiplier = 0.9
+        else:
+            age_multiplier = 0.7  # Declining years
+        
+        # Performance quality adjustment
+        era = player_row['ERA']
+        if era < 3.00:
+            perf_multiplier = 1.3
+        elif era < 3.50:
+            perf_multiplier = 1.1
+        elif era < 4.00:
+            perf_multiplier = 1.0
+        elif era < 5.00:
+            perf_multiplier = 0.8
+        else:
+            perf_multiplier = 0.5
+        
+        # Innings pitched (durability)
+        ip = player_row['IP']
+        if ip >= 180:
+            ip_multiplier = 1.2
+        elif ip >= 150:
+            ip_multiplier = 1.1
+        elif ip >= 100:
+            ip_multiplier = 1.0
+        elif ip >= 50:
+            ip_multiplier = 0.9
+        else:
+            ip_multiplier = 0.7
+        
+        # Calculate total trade value
+        trade_value = war_value * age_multiplier * perf_multiplier * ip_multiplier
+        
+        # Floor at 0 (can't have negative trade value)
+        trade_value = max(0, trade_value)
+        
+        return trade_value
+    
+    def calculate_realism_score(self, kc_package_value, external_package_value):
+        """
+        Calculate how realistic a trade is based on value balance
+        Returns: (realism_percentage, evaluation_string)
+        """
+        
+        # Calculate value difference
+        value_diff = abs(kc_package_value - external_package_value)
+        avg_value = (kc_package_value + external_package_value) / 2
+        
+        if avg_value == 0:
+            return 0, "UNREALISTIC - No value"
+        
+        # Calculate percentage difference
+        pct_diff = (value_diff / avg_value) * 100
+        
+        # Realism scoring
+        if pct_diff <= 10:
+            realism = 95
+            evaluation = "HIGHLY REALISTIC - Near-perfect value match"
+        elif pct_diff <= 20:
+            realism = 85
+            evaluation = "VERY REALISTIC - Balanced trade"
+        elif pct_diff <= 30:
+            realism = 70
+            evaluation = "REALISTIC - Slightly unbalanced but acceptable"
+        elif pct_diff <= 40:
+            realism = 55
+            evaluation = "SOMEWHAT REALISTIC - One side gets better value"
+        elif pct_diff <= 50:
+            realism = 40
+            evaluation = "QUESTIONABLE - Significant imbalance"
+        else:
+            realism = 20
+            evaluation = "UNREALISTIC - Major value mismatch"
+        
+        return realism, evaluation
+    
+    def find_balanced_trade_package(self, target_player, kc_available_players, max_players=3):
+        """
+        Find the best combination of KC players to match target player's value
+        """
+        target_value = self.calculate_trade_value(target_player)
+        
+        best_package = []
+        best_realism = 0
+        best_value_diff = float('inf')
+        
+        # Try single player trades first
+        for _, kc_player in kc_available_players.iterrows():
+            kc_value = self.calculate_trade_value(kc_player)
+            realism, _ = self.calculate_realism_score(kc_value, target_value)
+            value_diff = abs(kc_value - target_value)
+            
+            if realism > best_realism or (realism == best_realism and value_diff < best_value_diff):
+                best_realism = realism
+                best_package = [kc_player]
+                best_value_diff = value_diff
+        
+        # Try two-player packages if single player isn't realistic enough
+        if best_realism < 70 and len(kc_available_players) >= 2:
+            for i in range(len(kc_available_players)):
+                for j in range(i+1, min(i+10, len(kc_available_players))):  # Limit combinations
+                    player1 = kc_available_players.iloc[i]
+                    player2 = kc_available_players.iloc[j]
+                    
+                    package_value = (self.calculate_trade_value(player1) + 
+                                   self.calculate_trade_value(player2))
+                    realism, _ = self.calculate_realism_score(package_value, target_value)
+                    value_diff = abs(package_value - target_value)
+                    
+                    if realism > best_realism or (realism == best_realism and value_diff < best_value_diff):
+                        best_realism = realism
+                        best_package = [player1, player2]
+                        best_value_diff = value_diff
+        
+        # Try three-player packages if still not realistic
+        if best_realism < 70 and len(kc_available_players) >= 3 and max_players >= 3:
+            for i in range(len(kc_available_players)):
+                for j in range(i+1, min(i+8, len(kc_available_players))):
+                    for k in range(j+1, min(j+5, len(kc_available_players))):
+                        player1 = kc_available_players.iloc[i]
+                        player2 = kc_available_players.iloc[j]
+                        player3 = kc_available_players.iloc[k]
+                        
+                        package_value = (self.calculate_trade_value(player1) + 
+                                       self.calculate_trade_value(player2) +
+                                       self.calculate_trade_value(player3))
+                        realism, _ = self.calculate_realism_score(package_value, target_value)
+                        value_diff = abs(package_value - target_value)
+                        
+                        if realism > best_realism or (realism == best_realism and value_diff < best_value_diff):
+                            best_realism = realism
+                            best_package = [player1, player2, player3]
+                            best_value_diff = value_diff
+        
+        return best_package, best_realism
+
+# ============================================================================
+# REALISTIC EXTERNAL TRADE PROPOSALS
+# ============================================================================
+
+class RealisticTradeProposals:
+    """Generate realistic, value-balanced trade proposals"""
+    
+    def __init__(self, kc_roster_df, external_roster_df, valuation_system):
+        self.kc_roster = kc_roster_df
+        self.external_roster = external_roster_df
+        self.valuation = valuation_system
         
     def find_trade_targets_by_need(self):
         """Identify external trade targets based on KC needs"""
         print("\n10. EXTERNAL TRADE TARGET IDENTIFICATION")
         print("-" * 70)
         
-        # Define KC needs based on roster analysis
-        print("\nKC ROYALS IDENTIFIED NEEDS:")
-        print("  1. Ace Starting Pitcher (ERA < 3.00, 150+ IP)")
-        print("  2. High-Leverage Reliever (ERA < 3.00, K% > 25%)")
-        print("  3. Young Starting Pitcher (Age < 27, upside)")
-        
         # Find external ace candidates
         ace_candidates = self.external_roster[
             (self.external_roster['ERA'] < 3.00) &
             (self.external_roster['IP'] >= 150) &
             (self.external_roster['WAR'] >= 4.0)
-        ].sort_values('WAR', ascending=False).head(10)
+        ].sort_values('WAR', ascending=False).head(15)
+        
+        # Calculate trade values
+        if len(ace_candidates) > 0:
+            ace_candidates['Trade_Value'] = ace_candidates.apply(
+                self.valuation.calculate_trade_value, axis=1
+            )
         
         print(f"\n  ACE CANDIDATES FROM EXTERNAL POOL: {len(ace_candidates)}")
         if len(ace_candidates) > 0:
-            print(ace_candidates[['Player', 'Age', 'WAR', 'ERA', 'IP', 'K_percent']].to_string(index=False))
+            print(ace_candidates[['Player', 'Age', 'WAR', 'ERA', 'IP', 'Trade_Value']].to_string(index=False))
         
         # Find high-leverage relievers
         reliever_candidates = self.external_roster[
@@ -556,11 +717,16 @@ class ExternalTradeProposalAnalysis:
             (self.external_roster['IP'] >= 50) &
             (self.external_roster['IP'] < 100) &
             (self.external_roster['K_percent'] > 25)
-        ].sort_values('WAR', ascending=False).head(10)
+        ].sort_values('WAR', ascending=False).head(15)
+        
+        if len(reliever_candidates) > 0:
+            reliever_candidates['Trade_Value'] = reliever_candidates.apply(
+                self.valuation.calculate_trade_value, axis=1
+            )
         
         print(f"\n  HIGH-LEVERAGE RELIEVER CANDIDATES: {len(reliever_candidates)}")
         if len(reliever_candidates) > 0:
-            print(reliever_candidates[['Player', 'Age', 'WAR', 'ERA', 'K_percent', 'whiff_percent']].to_string(index=False))
+            print(reliever_candidates[['Player', 'Age', 'WAR', 'ERA', 'Trade_Value']].to_string(index=False))
         
         # Find young starters with upside
         young_starter_candidates = self.external_roster[
@@ -568,11 +734,16 @@ class ExternalTradeProposalAnalysis:
             (self.external_roster['IP'] >= 100) &
             (self.external_roster['ERA'] < 4.00) &
             (self.external_roster['WAR'] > 1.5)
-        ].sort_values('WAR', ascending=False).head(10)
+        ].sort_values('WAR', ascending=False).head(15)
+        
+        if len(young_starter_candidates) > 0:
+            young_starter_candidates['Trade_Value'] = young_starter_candidates.apply(
+                self.valuation.calculate_trade_value, axis=1
+            )
         
         print(f"\n  YOUNG STARTER CANDIDATES (Upside): {len(young_starter_candidates)}")
         if len(young_starter_candidates) > 0:
-            print(young_starter_candidates[['Player', 'Age', 'WAR', 'ERA', 'IP']].to_string(index=False))
+            print(young_starter_candidates[['Player', 'Age', 'WAR', 'ERA', 'Trade_Value']].to_string(index=False))
         
         return {
             'ace_candidates': ace_candidates,
@@ -581,87 +752,97 @@ class ExternalTradeProposalAnalysis:
         }
     
     def identify_kc_trade_chips(self):
-        """Identify KC players who could be traded"""
-        print("\n11. KC ROYALS AVAILABLE TRADE CHIPS")
+        """Identify KC players who could be traded with their values"""
+        print("\n11. KC ROYALS AVAILABLE TRADE CHIPS (WITH VALUES)")
         print("-" * 70)
         
-        # Players to move: underperformers or depth pieces
-        underperformers = self.kc_roster[
-            (self.kc_roster['WAR'] < 0) | 
-            ((self.kc_roster['ERA'] > 5.0) & (self.kc_roster['IP'] > 30))
-        ]
+        # Calculate trade values for all KC players
+        self.kc_roster['Trade_Value'] = self.kc_roster.apply(
+            self.valuation.calculate_trade_value, axis=1
+        )
         
-        depth_pieces = self.kc_roster[
-            (self.kc_roster['Archetype'] == 'Depth Piece') &
-            (self.kc_roster['WAR'] >= 0)
-        ]
+        # Categorize available players
+        tradeable_players = self.kc_roster[
+            (self.kc_roster['Archetype'].isin(['Depth Piece', 'Young_Prospect', 'High_Volume_Reliever'])) |
+            (self.kc_roster['WAR'] < 1.5)
+        ].sort_values('Trade_Value', ascending=False)
         
-        print(f"\n  UNDERPERFORMERS (negative value, priority to move): {len(underperformers)}")
-        if len(underperformers) > 0:
-            print(underperformers[['Player', 'Age', 'WAR', 'ERA', 'IP']].to_string(index=False))
+        print(f"\n  TRADEABLE ASSETS: {len(tradeable_players)} players")
+        if len(tradeable_players) > 0:
+            print(tradeable_players[['Player', 'Age', 'WAR', 'ERA', 'Archetype', 'Trade_Value']].to_string(index=False))
         
-        print(f"\n  DEPTH PIECES (expendable, neutral value): {len(depth_pieces)}")
-        if len(depth_pieces) > 0:
-            print(depth_pieces[['Player', 'Age', 'WAR', 'ERA']].head(10).to_string(index=False))
-        
-        return {
-            'underperformers': underperformers,
-            'depth_pieces': depth_pieces
-        }
+        return tradeable_players
     
-    def generate_external_trade_proposals(self, trade_targets, trade_chips):
-        """Generate realistic external trade proposals"""
-        print("\n12. EXTERNAL TRADE PROPOSALS")
+    def generate_realistic_trade_proposals(self, trade_targets, kc_tradeable):
+        """Generate realistic external trade proposals with realism scoring"""
+        print("\n12. REALISTIC TRADE PROPOSALS WITH VALUE ANALYSIS")
         print("="*70)
         
-        ace_candidates = trade_targets['ace_candidates']
-        young_starters = trade_targets['young_starter_candidates']
-        relievers = trade_targets['reliever_candidates']
-        
-        underperformers = trade_chips['underperformers']
-        depth_pieces = trade_chips['depth_pieces']
+        ace_candidates = trade_targets.get('ace_candidates', pd.DataFrame())
+        young_starters = trade_targets.get('young_starter_candidates', pd.DataFrame())
+        relievers = trade_targets.get('reliever_candidates', pd.DataFrame())
         
         # ----------------------------
         # PROPOSAL #1: Acquire Ace Starter
         # ----------------------------
         print("\n╔═══════════════════════════════════════════════════════════════════════╗")
-        print("║ TRADE PROPOSAL #1: ACQUIRE ACE STARTER                               ║")
+        print("║ TRADE PROPOSAL #1: ACQUIRE ACE STARTER (VALUE-BALANCED)              ║")
         print("╚═══════════════════════════════════════════════════════════════════════╝")
         
-        if len(ace_candidates) > 0 and len(underperformers) > 0:
-            # KC sends out worst performer
-            kc_sends = underperformers.nsmallest(1, 'WAR')
+        if len(ace_candidates) > 0 and len(kc_tradeable) > 0:
+            # Get best ace target
+            target_ace = ace_candidates.iloc[0]
+            target_value = target_ace['Trade_Value']
             
-            # KC receives best available ace
-            kc_receives = ace_candidates.nlargest(1, 'WAR')
+            # Find best KC package to match
+            kc_package, realism = self.valuation.find_balanced_trade_package(
+                target_ace, kc_tradeable, max_players=3
+            )
             
-            print("\n  KC ROYALS SEND OUT:")
-            for idx, row in kc_sends.iterrows():
-                print(f"    ❌ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
-            
-            print("\n  KC ROYALS RECEIVE:")
-            for idx, row in kc_receives.iterrows():
-                print(f"    ✅ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
-                print(f"       K%: {row['K_percent']:.1f}%  xERA: {row.get('xwOBA', 'N/A')}  Barrel%: {row.get('barrel_rate', 'N/A')}")
-            
-            # Calculate WAR impact
-            war_out = kc_sends['WAR'].sum()
-            war_in = kc_receives['WAR'].sum()
-            war_delta = war_in - war_out
-            
-            print("\n  IMPACT ANALYSIS:")
-            print(f"    WAR Change: {war_delta:+.1f} ({war_out:.1f} out → {war_in:.1f} in)")
-            print(f"    ERA Impact: {kc_sends.iloc[0]['ERA']:.2f} → {kc_receives.iloc[0]['ERA']:.2f}")
-            print(f"    Role Upgrade: {kc_sends.iloc[0].get('Archetype', 'Unknown')} → Elite Starter")
-            
-            print("\n  STRATEGIC RATIONALE:")
-            print("    ✓ Addresses rotation weakness with proven ace")
-            print("    ✓ Removes underperforming asset from 40-man")
-            print("    ✓ Improves playoff rotation depth")
-            print("    ⚠ Increases payroll with premium starter")
-            
-        else:
-            print("\n  ⚠ Insufficient trade assets or external targets for this proposal")
+            if len(kc_package) > 0:
+                print("\n  KC ROYALS SEND OUT:")
+                kc_total_value = 0
+                for player in kc_package:
+                    player_value = self.valuation.calculate_trade_value(player)
+                    kc_total_value += player_value
+                    print(f"    ❌ {player['Player']:<25} Age: {player['Age']:<3} WAR: {player['WAR']:>5.1f}  "
+                          f"ERA: {player['ERA']:>5.2f}  Value: {player_value:>6.1f}")
+                print(f"    {'TOTAL KC PACKAGE VALUE:':<44} {kc_total_value:>6.1f}")
+                
+                print("\n  KC ROYALS RECEIVE:")
+                print(f"    ✅ {target_ace['Player']:<25} Age: {target_ace['Age']:<3} WAR: {target_ace['WAR']:>5.1f}  "
+                      f"ERA: {target_ace['ERA']:>5.2f}  Value: {target_value:>6.1f}")
+                
+                # Realism analysis
+                realism_pct, realism_eval = self.valuation.calculate_realism_score(
+                    kc_total_value, target_value
+                )
+                
+                print(f"\n  ╔══════════════════════════════════════════════════════════════════╗")
+                print(f"  ║ REALISM SCORE: {realism_pct}% - {realism_eval:<43}║")
+                print(f"  ╚══════════════════════════════════════════════════════════════════╝")
+                
+                print(f"\n  VALUE ANALYSIS:")
+                print(f"    KC Sends:     {kc_total_value:>6.1f} trade value ({len(kc_package)} player{'s' if len(kc_package) > 1 else ''})")
+                print(f"    KC Receives:  {target_value:>6.1f} trade value (1 player)")
+                print(f"    Difference:   {abs(kc_total_value - target_value):>6.1f} ({abs(kc_total_value - target_value) / target_value * 100:.1f}% gap)")
+                
+                # Calculate WAR impact
+                war_out = sum([p['WAR'] for p in kc_package])
+                war_in = target_ace['WAR']
+                
+                print(f"\n  IMPACT ANALYSIS:")
+                print(f"    WAR Change: {war_in - war_out:+.1f} ({war_out:.1f} out → {war_in:.1f} in)")
+                print(f"    Roster Spots: {len(kc_package)} → 1 (clears {len(kc_package)-1} spot{'s' if len(kc_package) > 1 else ''})")
+                
+                print(f"\n  STRATEGIC RATIONALE:")
+                if realism_pct >= 70:
+                    print(f"    ✓ Fair value trade - both teams benefit")
+                    print(f"    ✓ KC addresses rotation need with proven ace")
+                    print(f"    ✓ Sending team gets {len(kc_package)} MLB-ready arms")
+                else:
+                    print(f"    ⚠ Value imbalance may require additional prospect")
+                    print(f"    ⚠ Consider adding cash or PTBNL to balance")
         
         print("\n" + "="*70)
         
@@ -669,43 +850,54 @@ class ExternalTradeProposalAnalysis:
         # PROPOSAL #2: Youth Infusion
         # ----------------------------
         print("\n╔═══════════════════════════════════════════════════════════════════════╗")
-        print("║ TRADE PROPOSAL #2: YOUTH INFUSION + SALARY RELIEF                    ║")
+        print("║ TRADE PROPOSAL #2: YOUNG CONTROLLABLE STARTER                        ║")
         print("╚═══════════════════════════════════════════════════════════════════════╝")
         
-        if len(young_starters) > 0 and len(depth_pieces) > 0:
-            # KC sends depth piece
-            kc_sends2 = depth_pieces.head(1)
+        if len(young_starters) > 0 and len(kc_tradeable) > 1:
+            # Get best young starter
+            target_young = young_starters.iloc[0]
+            target_value = target_young['Trade_Value']
             
-            # KC receives young starter
-            kc_receives2 = young_starters.nlargest(1, 'WAR')
+            # Find KC package
+            kc_package, realism = self.valuation.find_balanced_trade_package(
+                target_young, kc_tradeable, max_players=2
+            )
             
-            print("\n  KC ROYALS SEND OUT:")
-            for idx, row in kc_sends2.iterrows():
-                print(f"    ❌ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
-            
-            print("\n  KC ROYALS RECEIVE:")
-            for idx, row in kc_receives2.iterrows():
-                print(f"    ✅ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
-                print(f"       K%: {row['K_percent']:.1f}%  BB%: {row['BB_percent']:.1f}%  xwOBA: {row.get('xwOBA', 'N/A')}")
-            
-            # Calculate impact
-            war_out2 = kc_sends2['WAR'].sum()
-            war_in2 = kc_receives2['WAR'].sum()
-            war_delta2 = war_in2 - war_out2
-            
-            print("\n  IMPACT ANALYSIS:")
-            print(f"    WAR Change: {war_delta2:+.1f} ({war_out2:.1f} out → {war_in2:.1f} in)")
-            print(f"    Age Profile: {kc_sends2.iloc[0]['Age']} → {kc_receives2.iloc[0]['Age']} years old")
-            print(f"    Control Years: Limited → 4-6 years of team control")
-            
-            print("\n  STRATEGIC RATIONALE:")
-            print("    ✓ Adds controllable young starter to rotation")
-            print("    ✓ Salary relief (pre-arb vs veteran)")
-            print("    ✓ Aligns with competitive window (2025-2028)")
-            print("    ✓ Minimal short-term WAR sacrifice")
-            
-        else:
-            print("\n  ⚠ Insufficient trade assets or external targets for this proposal")
+            if len(kc_package) > 0:
+                print("\n  KC ROYALS SEND OUT:")
+                kc_total_value = 0
+                for player in kc_package:
+                    player_value = self.valuation.calculate_trade_value(player)
+                    kc_total_value += player_value
+                    print(f"    ❌ {player['Player']:<25} Age: {player['Age']:<3} WAR: {player['WAR']:>5.1f}  "
+                          f"ERA: {player['ERA']:>5.2f}  Value: {player_value:>6.1f}")
+                print(f"    {'TOTAL KC PACKAGE VALUE:':<44} {kc_total_value:>6.1f}")
+                
+                print("\n  KC ROYALS RECEIVE:")
+                print(f"    ✅ {target_young['Player']:<25} Age: {target_young['Age']:<3} WAR: {target_young['WAR']:>5.1f}  "
+                      f"ERA: {target_young['ERA']:>5.2f}  Value: {target_value:>6.1f}")
+                
+                # Realism analysis
+                realism_pct, realism_eval = self.valuation.calculate_realism_score(
+                    kc_total_value, target_value
+                )
+                
+                print(f"\n  ╔══════════════════════════════════════════════════════════════════╗")
+                print(f"  ║ REALISM SCORE: {realism_pct}% - {realism_eval:<43}║")
+                print(f"  ╚══════════════════════════════════════════════════════════════════╝")
+                
+                print(f"\n  VALUE ANALYSIS:")
+                print(f"    KC Sends:     {kc_total_value:>6.1f} trade value")
+                print(f"    KC Receives:  {target_value:>6.1f} trade value")
+                print(f"    Difference:   {abs(kc_total_value - target_value):>6.1f}")
+                
+                war_out = sum([p['WAR'] for p in kc_package])
+                war_in = target_young['WAR']
+                
+                print(f"\n  IMPACT ANALYSIS:")
+                print(f"    WAR Change: {war_in - war_out:+.1f}")
+                print(f"    Age Profile: Avg {sum([p['Age'] for p in kc_package])/len(kc_package):.1f} → {target_young['Age']} years")
+                print(f"    Control: Limited → 4-6 years team control")
         
         print("\n" + "="*70)
         
@@ -713,46 +905,46 @@ class ExternalTradeProposalAnalysis:
         # PROPOSAL #3: Bullpen Upgrade
         # ----------------------------
         print("\n╔═══════════════════════════════════════════════════════════════════════╗")
-        print("║ TRADE PROPOSAL #3: BULLPEN HIGH-LEVERAGE ARM                         ║")
+        print("║ TRADE PROPOSAL #3: HIGH-LEVERAGE RELIEVER                            ║")
         print("╚═══════════════════════════════════════════════════════════════════════╝")
         
-        if len(relievers) > 0 and (len(underperformers) > 1 or len(depth_pieces) > 1):
-            # KC sends underperformer or depth
-            if len(underperformers) > 1:
-                kc_sends3 = underperformers.nsmallest(2, 'WAR').head(1)
-            else:
-                kc_sends3 = depth_pieces.head(1)
+        if len(relievers) > 0 and len(kc_tradeable) > 2:
+            # Get best reliever
+            target_reliever = relievers.iloc[0]
+            target_value = target_reliever['Trade_Value']
             
-            # KC receives elite reliever
-            kc_receives3 = relievers.nlargest(1, 'WAR')
+            # Find KC package
+            kc_package, realism = self.valuation.find_balanced_trade_package(
+                target_reliever, kc_tradeable, max_players=2
+            )
             
-            print("\n  KC ROYALS SEND OUT:")
-            for idx, row in kc_sends3.iterrows():
-                print(f"    ❌ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
-            
-            print("\n  KC ROYALS RECEIVE:")
-            for idx, row in kc_receives3.iterrows():
-                print(f"    ✅ {row['Player']:<25} Age: {row['Age']:<3} WAR: {row['WAR']:>5.1f}  ERA: {row['ERA']:>5.2f}  IP: {row['IP']:>6.1f}")
-                print(f"       K%: {row['K_percent']:.1f}%  Whiff%: {row.get('whiff_percent', 'N/A')}%  Hard Hit%: {row.get('hard_hit_percent', 'N/A')}")
-            
-            # Calculate impact
-            war_out3 = kc_sends3['WAR'].sum()
-            war_in3 = kc_receives3['WAR'].sum()
-            war_delta3 = war_in3 - war_out3
-            
-            print("\n  IMPACT ANALYSIS:")
-            print(f"    WAR Change: {war_delta3:+.1f} ({war_out3:.1f} out → {war_in3:.1f} in)")
-            print(f"    Bullpen Role: Setup → High-Leverage/Closer")
-            print(f"    K Rate: {kc_sends3.iloc[0].get('K_percent', 0):.1f}% → {kc_receives3.iloc[0]['K_percent']:.1f}%")
-            
-            print("\n  STRATEGIC RATIONALE:")
-            print("    ✓ Strengthens late-inning bullpen depth")
-            print("    ✓ Elite strikeout ability for high-leverage spots")
-            print("    ✓ Playoff-caliber shutdown arm")
-            print("    ⚠ Reliever volatility (year-to-year variance)")
-            
-        else:
-            print("\n  ⚠ Insufficient trade assets or external targets for this proposal")
+            if len(kc_package) > 0:
+                print("\n  KC ROYALS SEND OUT:")
+                kc_total_value = 0
+                for player in kc_package:
+                    player_value = self.valuation.calculate_trade_value(player)
+                    kc_total_value += player_value
+                    print(f"    ❌ {player['Player']:<25} Age: {player['Age']:<3} WAR: {player['WAR']:>5.1f}  "
+                          f"ERA: {player['ERA']:>5.2f}  Value: {player_value:>6.1f}")
+                print(f"    {'TOTAL KC PACKAGE VALUE:':<44} {kc_total_value:>6.1f}")
+                
+                print("\n  KC ROYALS RECEIVE:")
+                print(f"    ✅ {target_reliever['Player']:<25} Age: {target_reliever['Age']:<3} WAR: {target_reliever['WAR']:>5.1f}  "
+                      f"ERA: {target_reliever['ERA']:>5.2f}  Value: {target_value:>6.1f}")
+                
+                # Realism analysis
+                realism_pct, realism_eval = self.valuation.calculate_realism_score(
+                    kc_total_value, target_value
+                )
+                
+                print(f"\n  ╔══════════════════════════════════════════════════════════════════╗")
+                print(f"  ║ REALISM SCORE: {realism_pct}% - {realism_eval:<43}║")
+                print(f"  ╚══════════════════════════════════════════════════════════════════╝")
+                
+                print(f"\n  VALUE ANALYSIS:")
+                print(f"    KC Sends:     {kc_total_value:>6.1f} trade value")
+                print(f"    KC Receives:  {target_value:>6.1f} trade value")
+                print(f"    Difference:   {abs(kc_total_value - target_value):>6.1f}")
 
 # ============================================================================
 # EXECUTE FULL ANALYSIS
@@ -782,36 +974,35 @@ arb_analysis = roster_opt.identify_arbitration_candidates()
 underperf_analysis = roster_opt.evaluate_underperformers()
 prospect_analysis = roster_opt.assess_prospect_promotion()
 
-# Run EXTERNAL trade analysis
-external_trades = ExternalTradeProposalAnalysis(kc_data_assigned, available_pitchers)
-trade_targets = external_trades.find_trade_targets_by_need()
-trade_chips = external_trades.identify_kc_trade_chips()
-external_trades.generate_external_trade_proposals(trade_targets, trade_chips)
+# Run REALISTIC trade analysis with valuation system
+valuation_system = RealisticTradeValuation(kc_data_assigned, available_pitchers)
+realistic_trades = RealisticTradeProposals(kc_data_assigned, available_pitchers, valuation_system)
+trade_targets = realistic_trades.find_trade_targets_by_need()
+kc_tradeable = realistic_trades.identify_kc_trade_chips()
+realistic_trades.generate_realistic_trade_proposals(trade_targets, kc_tradeable)
 
 # ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 
 print("\n" + "="*70)
-print("KC ROYALS ANALYSIS COMPLETE - EXTERNAL TRADE EDITION")
+print("KC ROYALS ANALYSIS COMPLETE - REALISTIC TRADE EDITION")
 print("="*70)
 print("\nEXECUTIVE SUMMARY:")
 print(f"  Competitive Window: {window['window']}")
 print(f"  Team ERA: {window['avg_era']:.2f}")
 print(f"  Total Pitching WAR: {window['total_war']:.1f}")
-print(f"  Arb Candidates: {arb_analysis['arb_eligible']}")
-print(f"  Underperformers: {len(underperf_analysis['underperformers'])}")
-print(f"  Promotable Prospects: {prospect_analysis['promotable']}")
-print(f"\n  External Ace Targets: {len(trade_targets['ace_candidates'])}")
-print(f"  External Young Starters: {len(trade_targets['young_starter_candidates'])}")
-print(f"  External Relievers: {len(trade_targets['reliever_candidates'])}")
-print(f"\n  KC Trade Chips (Underperformers): {len(trade_chips['underperformers'])}")
-print(f"  KC Trade Chips (Depth): {len(trade_chips['depth_pieces'])}")
+print(f"\n  External Ace Targets: {len(trade_targets.get('ace_candidates', []))}")
+print(f"  External Young Starters: {len(trade_targets.get('young_starter_candidates', []))}")
+print(f"  External Relievers: {len(trade_targets.get('reliever_candidates', []))}")
+print(f"\n  KC Tradeable Assets: {len(kc_tradeable)}")
 
 print("\n" + "="*70)
-print("RECOMMENDED ACTIONS:")
-print("  1. Execute Trade Proposal #1 to acquire ace starter")
-print("  2. DFA underperformers to clear 40-man roster space")
-print("  3. Promote top prospects to MLB roster")
-print("  4. Extend arbitration-eligible high performers")
+print("TRADE VALUE SYSTEM FEATURES:")
+print("  ✓ WAR-based valuation")
+print("  ✓ Age curve adjustments")
+print("  ✓ Performance quality multipliers")
+print("  ✓ Durability (IP) considerations")
+print("  ✓ Automatic package balancing (1-3 players)")
+print("  ✓ Realism scoring (0-100%)")
 print("="*70)
